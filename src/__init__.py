@@ -18,8 +18,13 @@ from __future__ import annotations
 # Non-Spark imports (always available)
 from src.alerting import Alert, AlertManager, AlertChannel, ConsoleChannel
 from src.alerting import WebhookChannel, EmailChannel, send_anomaly_alert
-from src.base import BasePipeline, retry, validate_date, validate_positive_int
 from src.data_generator import ClickstreamGenerator, EventCounter, produce_events
+
+# BasePipeline imports pyspark at module level — wrap so core-tests (no pyspark) can still use src
+try:
+    from src.base import BasePipeline, retry, validate_date, validate_positive_int  # noqa: F401
+except ImportError:
+    pass  # Spark not available — BasePipeline not importable until pyspark is installed
 
 # Spark-dependent imports (may fail in CI where only requirements-core.txt is installed)
 try:
