@@ -21,7 +21,7 @@ import numpy as np
 # Ensure src/ is on path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.base import validate_positive_int
+from src.utils import validate_positive_int
 from src.config import (
     EVENT_PROBABILITIES,
     GENERATOR_CONFIG,
