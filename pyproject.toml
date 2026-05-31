@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta:__legacy__"
+
+[project]
+name = "realtimestream"
+version = "0.1.0"
+description = "Real-Time Streaming Data Pipeline — Kafka + Spark + Delta Lake + MinIO + Airflow"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Yash Patil"}]
+requires-python = ">=3.9"
+dependencies = [
+    "pyspark>=3.5.0",
+    "delta-spark>=3.1.0",
+    "kafka-python>=2.0.2",
+    "psycopg2-binary>=2.9.0",
+    "boto3>=1.28.0",
+    "s3fs>=2023.6.0",
+    "streamlit>=1.28.0",
+    "plotly>=5.14.0",
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "great-expectations>=0.18.0",
+]
+
+[project.urls]
+Repository = "https://github.com/Yash-Patil-1/RealtimeStream"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["*/tests/*"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]

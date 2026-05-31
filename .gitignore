@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Data
+*.parquet
+*.csv
+*.json
+!sample_data/*.json
+!sample_data/*.csv
+data/
+
+# Docker
+docker-compose.override.yml
+
+# Logs
+*.log
+logs/
+
+# Spark
+spark-warehouse/
+metastore_db/
+derby.log
+
+# Great Expectations
+great_expectations/uncommitted/
+great_expectations/.gitignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+*.env.local

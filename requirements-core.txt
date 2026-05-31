@@ -1,0 +1,9 @@
+# Core dependencies for early phases (no Spark — saves 200MB+ in CI)
+numpy>=1.24.0
+pandas>=2.0.0
+kafka-python>=2.0.2
+psycopg2-binary>=2.9.0
+streamlit>=1.28.0
+plotly>=5.14.0
+great-expectations>=0.18.0
+pyarrow>=14.0.0

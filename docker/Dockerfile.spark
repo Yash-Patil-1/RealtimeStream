@@ -1,0 +1,36 @@
+FROM bitnami/spark:3.5.0
+
+USER root
+
+# Install dependencies for S3 + Delta Lake connectivity
+RUN mkdir -p /opt/bitnami/spark/jars
+
+# Delta Lake JARs
+ADD https://repo1.maven.org/maven2/io/delta/delta-core_2.13/3.1.0/delta-core_2.13-3.1.0.jar \
+    /opt/bitnami/spark/jars/delta-core_2.13-3.1.0.jar
+ADD https://repo1.maven.org/maven2/io/delta/delta-storage/3.1.0/delta-storage-3.1.0.jar \
+    /opt/bitnami/spark/jars/delta-storage-3.1.0.jar
+
+# Hadoop AWS + AWS SDK for MinIO (S3-compatible storage)
+ADD https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar \
+    /opt/bitnami/spark/jars/hadoop-aws-3.3.4.jar
+ADD https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar \
+    /opt/bitnami/spark/jars/aws-java-sdk-bundle-1.12.262.jar
+
+# Additional required dependencies
+ADD https://repo1.maven.org/maven2/org/apache/spark/spark-sql-kafka-0-10_2.13/3.5.0/spark-sql-kafka-0-10_2.13-3.5.0.jar \
+    /opt/bitnami/spark/jars/spark-sql-kafka-0-10_2.13-3.5.0.jar
+ADD https://repo1.maven.org/maven2/org/apache/kafka/kafka-clients/3.5.0/kafka-clients-3.5.0.jar \
+    /opt/bitnami/spark/jars/kafka-clients-3.5.0.jar
+ADD https://repo1.maven.org/maven2/org/apache/spark/spark-token-provider-kafka-0-10_2.13/3.5.0/spark-token-provider-kafka-0-10_2.13-3.5.0.jar \
+    /opt/bitnami/spark/jars/spark-token-provider-kafka-0-10_2.13-3.5.0.jar
+ADD https://repo1.maven.org/maven2/org/apache/commons/commons-pool2/2.11.1/commons-pool2-2.11.1.jar \
+    /opt/bitnami/spark/jars/commons-pool2-2.11.1.jar
+
+# Install python packages for pipeline scripts
+# requirements.txt is at project root, copied via build context (..)
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt || \
+    pip install --no-cache-dir pyspark==3.5.0 delta-spark==3.1.0 kafka-python numpy pandas
+
+USER 1001

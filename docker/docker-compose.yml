@@ -1,0 +1,253 @@
+version: "3.8"
+
+x-spark-common: &spark-common
+  image: streaming-spark:latest
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile.spark
+  networks: [stream-net]
+  environment:
+    SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+    SPARK_RPC_ENCRYPTION_ENABLED: "no"
+    SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
+    SPARK_SSL_ENABLED: "no"
+  volumes:
+    - ../src:/opt/spark/src
+    - ../dags:/opt/spark/dags
+    - ../sample_data:/opt/spark/sample_data
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.8.0
+  depends_on: [postgres]
+  networks: [stream-net]
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: "30"
+  volumes:
+    - ../dags:/opt/airflow/dags
+    - ../src:/opt/airflow/src
+    - ../requirements.txt:/opt/airflow/requirements.txt
+    - ../pyproject.toml:/opt/airflow/pyproject.toml
+
+services:
+  # ─── STREAMING: Kafka ───────────────────────────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    hostname: zookeeper
+    networks: [stream-net]
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    hostname: kafka
+    depends_on: [zookeeper]
+    networks: [stream-net]
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on: [kafka]
+    networks: [stream-net]
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Waiting for Kafka...' &&
+      cub kafka-ready -b kafka:29092 1 30 &&
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic raw_events --partitions 3 --replication-factor 1 &&
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic silver_events --partitions 3 --replication-factor 1 &&
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic anomaly_alerts --partitions 1 --replication-factor 1 &&
+      echo 'Kafka topics created successfully'
+      "
+
+  # ─── STORAGE: MinIO (local S3) ─────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    hostname: minio
+    networks: [stream-net]
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 30s
+      timeout: 5s
+      retries: 1
+
+  mc:
+    image: minio/mc:latest
+    depends_on: [minio]
+    networks: [stream-net]
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5 &&
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin &&
+      /usr/bin/mc mb myminio/streaming-lake --ignore-existing &&
+      /usr/bin/mc mb myminio/datasets --ignore-existing &&
+      echo 'MinIO buckets created successfully'
+      "
+
+  # ─── METADATA: PostgreSQL ──────────────────────────────────────────
+  postgres:
+    image: postgres:15
+    hostname: postgres
+    networks: [stream-net]
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── PROCESSING: Spark Cluster ─────────────────────────────────────
+  spark-master:
+    <<: *spark-common
+    hostname: spark-master
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    command: bin/spark-class org.apache.spark.deploy.master.Master
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  spark-worker:
+    <<: *spark-common
+    hostname: spark-worker
+    depends_on: [spark-master]
+    ports:
+      - "8081:8081"
+    command: bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    environment:
+      SPARK_WORKER_CORES: 2
+      SPARK_WORKER_MEMORY: 2g
+
+  # ─── ORCHESTRATION: Airflow ────────────────────────────────────────
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: >
+      /bin/sh -c "
+      airflow db init &&
+      airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true &&
+      echo 'Airflow initialized'
+      "
+
+  airflow-webserver:
+    <<: *airflow-common
+    depends_on: [airflow-init]
+    ports:
+      - "8082:8080"
+    command: airflow webserver
+
+  airflow-scheduler:
+    <<: *airflow-common
+    depends_on: [airflow-init]
+    command: airflow scheduler
+
+  # ─── DASHBOARD: Streamlit ──────────────────────────────────────────
+  dashboard:
+    image: python:3.11-slim
+    hostname: dashboard
+    networks: [stream-net]
+    ports:
+      - "8501:8501"
+    depends_on:
+      - kafka
+      - minio
+    working_dir: /app
+    volumes:
+      - ../dashboard:/app/dashboard
+      - ../src:/app/src
+      - ../pyproject.toml:/app/pyproject.toml
+    command: >
+      /bin/sh -c "
+      pip install -q streamlit plotly pandas numpy &&
+      streamlit run dashboard/app.py --server.port 8501 --server.address 0.0.0.0
+      "
+    profiles:
+      - all
+
+  # ─── DATA GENERATOR ────────────────────────────────────────────────
+  generator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.generator
+    hostname: generator
+    networks: [stream-net]
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EVENTS_PER_SECOND: "${EVENTS_PER_SECOND:-10}"
+    profiles:
+      - all
+
+  # ─── MONITORING: Prometheus + Grafana ──────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    hostname: prometheus
+    networks: [stream-net]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+
+  grafana:
+    image: grafana/grafana:latest
+    hostname: grafana
+    networks: [stream-net]
+    ports:
+      - "3000:3000"
+    depends_on: [prometheus]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+networks:
+  stream-net:
+    driver: bridge
+
+volumes:
+  minio-data:
+  postgres-data:
+  prometheus-data:
+  grafana-data:
