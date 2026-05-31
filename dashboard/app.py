@@ -11,12 +11,10 @@ Monitors the Medallion pipeline (Bronze → Silver → Gold):
 Run: streamlit run dashboard/app.py
 """
 
-import json
-import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 
 import pandas as pd
 import plotly.express as px
@@ -27,13 +25,11 @@ from plotly.subplots import make_subplots
 # Ensure src/ is on path for config import
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.config import (
-    EVENT_TYPES,
     EVENT_PROBABILITIES,
     KAFKA_TOPICS,
     MEDALLION_PATHS,
     QUALITY_CONFIG,
     ANOMALY_CONFIG,
-    ENRICHMENT_CONFIG,
     GENERATOR_CONFIG,
 )
 
@@ -402,7 +398,7 @@ def render_sidebar() -> str:
     st.sidebar.divider()
 
     # Refresh rate
-    refresh_rate = st.sidebar.select_slider(
+    st.sidebar.select_slider(
         "Auto-refresh (seconds)",
         options=[10, 30, 60, 120, 300],
         value=60,
@@ -484,7 +480,6 @@ def render_overview(events: pd.DataFrame, kpis: pd.DataFrame, sessions: pd.DataF
     st.subheader("🏗️ Medallion Pipeline Status")
 
     bronze_count = total_events
-    silver_quality = (events["event_type"] == "error").mean() * 100
     silver_passed = total_events - (events["event_type"] == "error").sum()
     gold_kpis = len(kpis)
     gold_sessions = len(sessions)

@@ -15,22 +15,28 @@ Pipeline stages:
 
 from __future__ import annotations
 
+# Non-Spark imports (always available)
 from src.alerting import Alert, AlertManager, AlertChannel, ConsoleChannel
 from src.alerting import WebhookChannel, EmailChannel, send_anomaly_alert
 from src.base import BasePipeline, retry, validate_date, validate_positive_int
-from src.bronze_streaming import BronzePipeline, parse_schema
 from src.data_generator import ClickstreamGenerator, EventCounter, produce_events
-from src.gold_aggregations import (
-    GoldPipeline,
-    compute_kpis,
-    compute_sessions,
-    compute_funnels,
-    compute_anomaly_aggregations,
-)
-from src.silver_streaming import (
-    SilverPipeline,
-    AnomalyDetector,
-)
+
+# Spark-dependent imports (may fail in CI where only requirements-core.txt is installed)
+try:
+    from src.bronze_streaming import BronzePipeline, parse_schema  # noqa: F401
+    from src.gold_aggregations import (  # noqa: F401
+        GoldPipeline,
+        compute_kpis,
+        compute_sessions,
+        compute_funnels,
+        compute_anomaly_aggregations,
+    )
+    from src.silver_streaming import (  # noqa: F401
+        SilverPipeline,
+        AnomalyDetector,
+    )
+except ImportError:
+    pass  # Spark not available — these names won't be importable until pyspark is installed
 
 __all__ = [
     # Pipeline classes
