@@ -24,6 +24,7 @@ from typing import Dict, Optional
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.functions import (
     col,
+    expr,
     from_json,
     lit,
     to_date,
@@ -133,12 +134,17 @@ def _cast_numeric_fields(df: DataFrame) -> DataFrame:
     """
     Cast numeric string fields (amount, error_code, response_time_ms, status_code)
     to their proper types. Invalid/missing values become NULL.
+
+    Uses ``try_cast`` (SQL expression) instead of ``cast`` because PySpark 4.x
+    enables ANSI mode by default, causing ``cast`` to throw on malformed input
+    (e.g. the string ``'None'`` cast to ``DOUBLE``). ``try_cast`` returns NULL
+    instead.
     """
     return (
-        df.withColumn("amount", when(col("amount").isNotNull(), col("amount").cast(DoubleType())))
-        .withColumn("error_code", when(col("error_code").isNotNull(), col("error_code").cast(IntegerType())))
-        .withColumn("response_time_ms", when(col("response_time_ms").isNotNull(), col("response_time_ms").cast(IntegerType())))
-        .withColumn("status_code", when(col("status_code").isNotNull(), col("status_code").cast(IntegerType())))
+        df.withColumn("amount", when(col("amount").isNotNull(), expr("try_cast(amount AS double)")))
+        .withColumn("error_code", when(col("error_code").isNotNull(), expr("try_cast(error_code AS int)")))
+        .withColumn("response_time_ms", when(col("response_time_ms").isNotNull(), expr("try_cast(response_time_ms AS int)")))
+        .withColumn("status_code", when(col("status_code").isNotNull(), expr("try_cast(status_code AS int)")))
     )
 
 
